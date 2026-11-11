@@ -628,7 +628,8 @@ file in `~/Nextcloud` stands.
     { "id": "share", "label": "Nextcloud…", "menu": "share", "command": ["./share"],
       "under": ["~/Nextcloud/"], "single": true }
   ],
-  "details": { "command": ["./filestatus"], "under": ["~/Nextcloud/"] }
+  "details": { "command": ["./filestatus"], "under": ["~/Nextcloud/"] },
+  "watch": { "command": ["./watch"] }
 }
 ```
 
@@ -642,7 +643,10 @@ it syncs (no status: the client shows its own) and prints `"actions":
 `share` sends the client `SHARE`, for
 it to open its share options in a window of its own. `filestatus` prints `[["Nextcloud", status]]` with `up to date`,
 `syncing`, `ignored` or `error`, then `, shared` for what's shared, and `[]`
-when the client isn't running or doesn't sync the file. A manifest's `under`
+when the client isn't running or doesn't sync the file. `watch` stays on the
+socket with `socat` and passes on what the client says, a line whenever
+something in a folder it syncs changed, so the details row keeps up with a
+sync as it goes; with no client running it ends, and Folio starts it again. A manifest's `under`
 can't follow the client's settings, so the Share entry and the details row
 are for the usual `~/Nextcloud` only.
 

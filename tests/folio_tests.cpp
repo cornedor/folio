@@ -4728,6 +4728,36 @@ private slots:
         client.waitForFinished();
     }
 
+    void nextcloudPluginWatchesTheClient()
+    {
+        const auto plugin = bundledPlugin("nextcloud");
+        if (plugin.id.isEmpty())
+            QSKIP("socat or jq isn't installed");
+        QCOMPARE(plugin.watch, QStringList({"./watch"}));
+        QTemporaryDir home, dir;
+        const QString bin = binWithSocat(dir.filePath("bin"), {});
+        auto watch = [&](const QString &runtime) {
+            QProcessEnvironment env;
+            env.insert("PATH", bin);
+            env.insert("HOME", home.path());
+            env.insert("XDG_RUNTIME_DIR", runtime);
+            return Plugins::execute(plugin, plugin.watch, env, 1000);
+        };
+        // With no client to listen to it ends, for Folio to start it again.
+        const Plugins::Run alone = watch(dir.filePath("nothing"));
+        QVERIFY(alone.started && !alone.timedOut && alone.code != 0);
+
+        // With one it stays, passing on each line the client says.
+        QProcess client;
+        QString runtime;
+        QVERIFY(startNextcloud(client, dir.path(), home.filePath("Nextcloud"), &runtime));
+        const Plugins::Run listening = watch(runtime);
+        QVERIFY(listening.timedOut);
+        QCOMPARE(listening.out, "REGISTER_PATH:" + home.filePath("Nextcloud").toUtf8() + "\n");
+        client.kill();
+        client.waitForFinished();
+    }
+
     void localSendPluginNeedsLocalSend()
     {
         QTemporaryDir dir;
