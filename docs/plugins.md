@@ -2,8 +2,8 @@
 
 A plugin adds something Folio doesn't know about on its own: a section in the
 sidebar, a status on one of its rows, entries in the right-click menu, rows
-in the details pane, or a view in the main pane. Tailscale, Dropbox and LocalSend come with
-Folio as plugins, and they use nothing that isn't described here, so a plugin
+in the details pane, or a view in the main pane. Tailscale, Dropbox, Nextcloud and LocalSend
+come with Folio as plugins, and they use nothing that isn't described here, so a plugin
 you write sits on equal footing with them.
 
 A plugin is a folder holding a `manifest.json` and some commands. Folio never
@@ -23,7 +23,7 @@ in, or Folio won't run it.
 
 | Folder | What's there |
 | --- | --- |
-| `/usr/share/folio/plugins/<id>/` | Plugins installed by packages, including the three that come with Folio. |
+| `/usr/share/folio/plugins/<id>/` | Plugins installed by packages, including the four that come with Folio. |
 | `~/.local/share/folio/plugins/<id>/` (`$XDG_DATA_HOME`) | Your own. One with the same id replaces the packaged one entirely. |
 
 The folder's name is the plugin's id: lowercase letters, digits and dashes,
@@ -575,6 +575,39 @@ link for %1 copied.", name]}`. `filestatus` prints `[["Dropbox", status]]`
 with what `dropbox-cli filestatus` says of the file (`up to date`, `syncing`
 or `unsyncable`), and `[]` when Dropbox isn't running or `dropbox-cli` isn't
 there.
+
+**nextcloud** marks the folders the Nextcloud client syncs with Nextcloud's
+mark, has the client copy internal links, and says in the details pane how a
+file in `~/Nextcloud` stands.
+
+```json
+{
+  "folio": 1,
+  "requires": ["python3"],
+  "poll": { "command": ["./status"] },
+  "actions": [
+    { "id": "link", "label": "Nextcloud Internal Link", "menu": "share", "command": ["./link"],
+      "under": ["~/Nextcloud/"], "single": true }
+  ],
+  "details": { "command": ["./filestatus"], "under": ["~/Nextcloud/"] }
+}
+```
+
+Nextcloud has no command like `dropbox-cli`, so the commands ask the running
+client over the socket it keeps for file managers
+(`$XDG_RUNTIME_DIR/Nextcloud/socket`), as its Nautilus extension does; they
+share `client.py` for that. `status` marks every folder the client says it
+syncs (no status: the client shows its own) and prints `"actions":
+["link"]`; with no client running it prints `{}` without a `~/Nextcloud`
+folder, and otherwise that folder's mark and `"actions": []`. `link` sends the client
+`COPY_PRIVATE_LINK` and prints `{"notice": ["Nextcloud internal link for %1
+copied.", name]}`; the client puts the link on the clipboard itself, since
+the socket doesn't give it back. `filestatus` prints `[["Nextcloud",
+status]]` with `up to date`, `syncing`, `ignored` or `error`, then `,
+shared` for what's shared, and `[]` when the client isn't running or
+doesn't sync the file. A manifest's `under` can't follow the client's
+settings, so the link and the details row are for the usual `~/Nextcloud`
+only.
 
 **localsend** sends to nearby devices.
 

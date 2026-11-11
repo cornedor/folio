@@ -1,0 +1,10 @@
+{
+  "folio": 1,
+  "requires": ["python3"],
+  "poll": { "command": ["./status"] },
+  "actions": [
+    { "id": "link", "label": "Nextcloud Internal Link", "menu": "share", "command": ["./link"],
+      "under": ["~/Nextcloud/"], "single": true }
+  ],
+  "details": { "command": ["./filestatus"], "under": ["~/Nextcloud/"] }
+}

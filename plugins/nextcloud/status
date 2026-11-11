@@ -1,0 +1,28 @@
+#!/usr/bin/env -S python3 -B
+# Marks the folders the Nextcloud client syncs with Nextcloud's own mark. With
+# no client running, its usual folder keeps the mark. Their state isn't said
+# on the row: the client shows that itself, and a word beside the folder only
+# takes room from its name. While the client runs, their files can be shared
+# by link.
+import json
+import os
+
+from client import Client
+
+
+def short(path):
+    home = os.path.expanduser("~")
+    return "~" + path[len(home):] if path.startswith(home + "/") else path
+
+
+try:
+    roots, actions = Client(3).roots(), ["link"]
+except OSError:
+    roots = [path for path in [os.path.expanduser("~/Nextcloud")] if os.path.isdir(path)]
+    # Without an actions list every action would be on, so it's always there.
+    actions = []
+if roots:
+    print(json.dumps({"places": [{"path": short(root), "icon": "nextcloud.svg"} for root in roots],
+                      "actions": actions}))
+else:
+    print("{}")

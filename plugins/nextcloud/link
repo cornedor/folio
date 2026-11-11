@@ -1,0 +1,19 @@
+#!/usr/bin/env -S python3 -B
+# Asks the Nextcloud client to copy the file's internal link, which opens it
+# for those who can already reach it. The client puts the link on the
+# clipboard itself; its socket doesn't give it back.
+import json
+import os
+import sys
+
+from client import Client
+
+try:
+    client = Client(3)
+    # Hanging up on a greeting left unread would reset the connection.
+    client.roots()
+    client.send("COPY_PRIVATE_LINK", sys.argv[1])
+except OSError:
+    print(json.dumps({"error": "Nextcloud isn't running."}))
+    sys.exit(1)
+print(json.dumps({"notice": ["Nextcloud internal link for %1 copied.", os.path.basename(sys.argv[1])]}))

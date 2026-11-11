@@ -1,0 +1,21 @@
+#!/usr/bin/env -S python3 -B
+# Says how a file or folder in Nextcloud stands, from what the client answers
+# about it, adding "shared" for what's shared. The client not running, or a
+# file it doesn't sync, gives no row.
+import json
+import sys
+
+from client import Client
+
+WORDS = {"OK": "up to date", "SYNC": "syncing", "NEW": "syncing", "IGNORE": "ignored", "ERROR": "error"}
+
+path = sys.argv[1].rstrip("/")
+try:
+    state = Client(1.5).states([path]).get(path, "")
+except OSError:
+    state = ""
+state, _, shared = state.partition("+")
+rows = []
+if state in WORDS:
+    rows.append(["Nextcloud", WORDS[state] + (", shared" if shared == "SWM" else "")])
+print(json.dumps(rows))
