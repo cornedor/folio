@@ -1,0 +1,7 @@
+#!/bin/sh
+# Has the Nextcloud client open its share options for the file or folder, in
+# a window of its own.
+if ! "${0%/*}/ask" "SHARE:$1" >/dev/null; then
+  echo '{"error": "Nextcloud isn'\''t running."}'
+  exit 1
+fi

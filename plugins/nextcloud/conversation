@@ -1,0 +1,13 @@
+#!/bin/sh
+# One conversation with the Nextcloud client, which `ask` has socat run with
+# the client on descriptors 3 (in) and 4 (out): sends the lines in
+# NEXTCLOUD_LINES and prints what comes back. The client answers in order,
+# and drops what it hasn't answered once we hang up, so its version is asked
+# for last and waited for.
+[ -n "$NEXTCLOUD_LINES" ] && printf '%s\n' "$NEXTCLOUD_LINES" >&4
+echo VERSION: >&4
+while IFS= read -r line <&3; do
+  case "$line" in VERSION:*) exit 0 ;; esac
+  printf '%s\n' "$line"
+done
+exit 1

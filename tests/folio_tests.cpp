@@ -473,6 +473,60 @@ static Plugins::Run runBundled(const Plugins::Manifest &plugin, const QStringLis
     return Plugins::execute(plugin, command, env, 5000);
 }
 
+// A stand-in for the Nextcloud client's socket, which the nextcloud plugin
+// asks as the client's Nautilus extension does: one end of a conversation,
+// run by socat for each connection. It names its one synced folder on
+// connecting, answers a status by the name asked about, and notes any other
+// command in the log.
+static const char *nextcloudClient = R"(#!/bin/sh
+echo "REGISTER_PATH:$NEXTCLOUD_ROOT"
+while IFS= read -r line; do
+  case "$line" in
+    VERSION:*) echo "VERSION:35.0.0:1.1" ;;
+    RETRIEVE_*)
+      case "${line##*/}" in
+        *new*) said=SYNC ;; *added*) said=NEW ;; *broken*) said=ERROR ;; *skipped*) said=IGNORE ;;
+        *theirs*) said=OK+SWM ;; *foreign*) said=NOP ;; *) said=OK ;;
+      esac
+      echo "STATUS:$said:${line#*:}" ;;
+    *) echo "$line" >> "$NEXTCLOUD_LOG" ;;
+  esac
+done
+)";
+
+// Starts that stand-in under `dir` for the folder `root`, and gives the
+// XDG_RUNTIME_DIR it listens in once it does. False without socat.
+static bool startNextcloud(QProcess &client, const QString &dir, const QString &root, QString *runtime)
+{
+    *runtime = dir + "/runtime";
+    QDir().mkpath(*runtime + "/Nextcloud");
+    QFile script(dir + "/client");
+    if (!script.open(QIODevice::WriteOnly))
+        return false;
+    script.write(nextcloudClient);
+    script.close();
+    script.setPermissions(script.permissions() | QFileDevice::ExeOwner);
+    QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
+    environment.insert("NEXTCLOUD_ROOT", root);
+    environment.insert("NEXTCLOUD_LOG", dir + "/log");
+    client.setProcessEnvironment(environment);
+    client.setWorkingDirectory(dir);
+    client.start("socat", {"UNIX-LISTEN:" + *runtime + "/Nextcloud/socket,fork", "EXEC:./client"});
+    if (!client.waitForStarted())
+        return false;
+    for (int i = 0; i < 100 && !QFileInfo::exists(*runtime + "/Nextcloud/socket"); ++i)
+        QTest::qWait(50);
+    return QFileInfo::exists(*runtime + "/Nextcloud/socket");
+}
+
+// binWith, and the socat the nextcloud plugin talks to the client with.
+static QString binWithSocat(const QString &folder, const QHash<QString, QByteArray> &scripts)
+{
+    binWith(folder, scripts);
+    QFile::link(QStandardPaths::findExecutable("socat"), folder + "/socat");
+    return folder;
+}
+
 class FolioTests : public QObject {
     Q_OBJECT
 
@@ -4471,6 +4525,113 @@ private slots:
         QCOMPARE(rows("/home/me/Dropbox/stopped.pdf", bin), QJsonArray());
         QCOMPARE(rows("/home/me/Dropbox/ignored.pdf", bin), QJsonArray());
         QCOMPARE(rows("/home/me/Dropbox/a.pdf", binWith(dir.filePath("none"), {})), QJsonArray());
+    }
+
+    void nextcloudPluginMarksItsFolders()
+    {
+        const auto plugin = bundledPlugin("nextcloud");
+        if (plugin.id.isEmpty())
+            QSKIP("socat or jq isn't installed");
+        QTemporaryDir home, dir;
+        const QString bin = binWithSocat(dir.filePath("bin"), {});
+        auto run = [&](const QString &runtime) {
+            const Plugins::Run r = runBundled(plugin, plugin.poll, bin, home.path(), {{"XDG_RUNTIME_DIR", runtime}});
+            return r.ok() ? Plugins::parseOutput(r.out) : std::nullopt;
+        };
+        // Nothing to say with no client running and no Nextcloud folder.
+        auto output = run(dir.filePath("nothing"));
+        QVERIFY(output && output->places.isEmpty());
+
+        QDir(home.path()).mkpath("Nextcloud");
+        // The mark, even without the client, but no links.
+        output = run(dir.filePath("nothing"));
+        QCOMPARE(output->places.size(), 1);
+        QCOMPARE(output->places[0].path, QString("~/Nextcloud"));
+        QCOMPARE(output->places[0].icon, QString("nextcloud.svg"));
+        QVERIFY(output->places[0].status.isUndefined());
+        QCOMPARE(output->actions, std::optional<QStringList>(QStringList{}));
+
+        // Running, the folders marked are the ones the client syncs,
+        // wherever they are; sharing works while the client runs.
+        QDir(home.path()).mkpath("Cloud: mine");
+        QProcess client;
+        QString runtime;
+        QVERIFY(startNextcloud(client, dir.path(), home.filePath("Cloud: mine"), &runtime));
+        output = run(runtime);
+        QCOMPARE(output->places.size(), 1);
+        QCOMPARE(output->places[0].path, QString("~/Cloud: mine"));
+        QCOMPARE(output->places[0].icon, QString("nextcloud.svg"));
+        QVERIFY(output->places[0].status.isUndefined());
+        QCOMPARE(output->actions, std::optional<QStringList>(QStringList{"share"}));
+        client.kill();
+        client.waitForFinished();
+    }
+
+    void nextcloudPluginSaysHowAFileStands()
+    {
+        const auto plugin = bundledPlugin("nextcloud");
+        if (plugin.id.isEmpty())
+            QSKIP("socat or jq isn't installed");
+        QCOMPARE(plugin.details, QStringList({"./filestatus"}));
+        QCOMPARE(plugin.detailsUnder, QStringList({"~/Nextcloud/"}));
+        QTemporaryDir home, dir;
+        const QString bin = binWithSocat(dir.filePath("bin"), {});
+        const QString root = home.filePath("Nextcloud");
+        QDir(root).mkpath("folder");
+        auto rows = [&](const QString &path, const QString &runtime) {
+            const Plugins::Run run = runBundled(plugin, plugin.details + QStringList{path}, bin, home.path(),
+                                                {{"XDG_RUNTIME_DIR", runtime}});
+            return run.ok() ? QJsonDocument::fromJson(run.out).array() : QJsonArray{"failed"};
+        };
+        // Nothing while the client isn't running.
+        QCOMPARE(rows(root + "/a.pdf", dir.filePath("nothing")), QJsonArray());
+
+        QProcess client;
+        QString runtime;
+        QVERIFY(startNextcloud(client, dir.path(), root, &runtime));
+        QCOMPARE(rows(root + "/a: b.pdf", runtime), QJsonArray({QJsonArray{"Nextcloud", "up to date"}}));
+        QCOMPARE(rows(root + "/folder", runtime), QJsonArray({QJsonArray{"Nextcloud", "up to date"}}));
+        QCOMPARE(rows(root + "/new.pdf", runtime), QJsonArray({QJsonArray{"Nextcloud", "syncing"}}));
+        QCOMPARE(rows(root + "/added.pdf", runtime), QJsonArray({QJsonArray{"Nextcloud", "syncing"}}));
+        QCOMPARE(rows(root + "/skipped.tmp", runtime), QJsonArray({QJsonArray{"Nextcloud", "ignored"}}));
+        QCOMPARE(rows(root + "/broken.pdf", runtime), QJsonArray({QJsonArray{"Nextcloud", "error"}}));
+        QCOMPARE(rows(root + "/theirs.pdf", runtime), QJsonArray({QJsonArray{"Nextcloud", "up to date, shared"}}));
+        // Nothing about what the client doesn't sync.
+        QCOMPARE(rows(root + "/foreign.pdf", runtime), QJsonArray());
+        client.kill();
+        client.waitForFinished();
+    }
+
+    void nextcloudPluginHandsSharingToTheClient()
+    {
+        const auto plugin = bundledPlugin("nextcloud");
+        if (plugin.id.isEmpty())
+            QSKIP("socat or jq isn't installed");
+        QCOMPARE(plugin.actions.size(), 1);
+        QCOMPARE(plugin.actions[0].label, QString("Nextcloud…"));
+        QVERIFY(plugin.actions[0].single);
+        QCOMPARE(plugin.actions[0].under, QStringList({"~/Nextcloud/"}));
+        QTemporaryDir home, dir;
+        const QString bin = binWithSocat(dir.filePath("bin"), {});
+        const QString file = home.filePath("Nextcloud/a \"b\".pdf");
+        auto share = [&](const QString &runtime) {
+            return runBundled(plugin, plugin.actions[0].command + QStringList{file}, bin, home.path(),
+                              {{"XDG_RUNTIME_DIR", runtime}});
+        };
+        // Without the client there's no one to ask.
+        const Plugins::Run failed = share(dir.filePath("nothing"));
+        QVERIFY(!failed.ok());
+        QCOMPARE(Plugins::text(plugin, QJsonDocument::fromJson(failed.out).object().value("error")),
+                 QString("Nextcloud isn't running."));
+
+        // The client is told to open its share options for the file.
+        QProcess client;
+        QString runtime;
+        QVERIFY(startNextcloud(client, dir.path(), home.filePath("Nextcloud"), &runtime));
+        QVERIFY(share(runtime).ok());
+        QTRY_COMPARE(contents(dir.filePath("log")), "SHARE:" + file.toUtf8() + "\n");
+        client.kill();
+        client.waitForFinished();
     }
 
     void localSendPluginNeedsLocalSend()

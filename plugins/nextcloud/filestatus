@@ -1,0 +1,24 @@
+#!/bin/sh
+# Says how a file or folder in Nextcloud stands, from what the client answers
+# about it, adding "shared" for what's shared. The client not running, or a
+# file it doesn't sync, gives no row.
+path=${1%/}
+if [ -d "$path" ]; then kind=FOLDER; else kind=FILE; fi
+state=
+while IFS= read -r line; do
+  # A path may hold colons of its own; a state never does.
+  case "$line" in
+    STATUS:*:"$path") state=${line#STATUS:}; state=${state%%:*} ;;
+  esac
+done <<LINES
+$("${0%/*}/ask" "RETRIEVE_${kind}_STATUS:$path")
+LINES
+case "${state%+SWM}" in
+  OK) words="up to date" ;;
+  SYNC | NEW) words=syncing ;;
+  IGNORE) words=ignored ;;
+  ERROR) words=error ;;
+  *) echo '[]'; exit 0 ;;
+esac
+case "$state" in *+SWM) words="$words, shared" ;; esac
+printf '[["Nextcloud", "%s"]]\n' "$words"

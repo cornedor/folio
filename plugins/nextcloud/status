@@ -1,0 +1,16 @@
+#!/bin/sh
+# Marks the folders the Nextcloud client syncs with Nextcloud's own mark. With
+# no client running, its usual folder keeps the mark. Their state isn't said
+# on the row: the client shows that itself, and a word beside the folder only
+# takes room from its name. While the client runs, their files can be shared.
+if said=$("${0%/*}/ask"); then
+  printf '%s\n' "$said" | sed -n 's/^REGISTER_PATH://p' | jq -Rnc --arg home "$HOME" '
+    {places: [inputs | select(. != "") | {icon: "nextcloud.svg", path:
+       (if startswith($home + "/") then "~" + .[($home | length):] else . end)}],
+     actions: ["share"]}'
+elif [ -d "$HOME/Nextcloud" ]; then
+  # Without an actions list every action would be on, so it's always there.
+  echo '{"places": [{"path": "~/Nextcloud", "icon": "nextcloud.svg"}], "actions": []}'
+else
+  echo '{}'
+fi

@@ -1,0 +1,17 @@
+#!/bin/sh
+# Sends the Nextcloud client the lines given and prints what it says back,
+# over the socket it keeps for file managers, as its Nautilus extension does.
+# Lines out are "COMMAND:argument"; back come "REGISTER_PATH:<folder>" for
+# each folder it syncs, sent on connecting, and "STATUS:<state>:<path>" for a
+# path asked about. A state is OK, SYNC, NEW, IGNORE, ERROR or NOP (not the
+# client's), with +SWM after it when shared. Fails when no client is running.
+
+# Without XDG_RUNTIME_DIR the client falls back as Qt does.
+socket="${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}/runtime-$USER}/Nextcloud/socket"
+[ -S "$socket" ] || exit 1
+# From the plugin's folder, so its path needs no quoting for socat.
+cd "${0%/*}" || exit 1
+# socat runs the conversation with the client on descriptors 3 and 4, and
+# gives up on a client that says nothing for 2 seconds.
+NEXTCLOUD_LINES=$(printf '%s\n' "$@") exec socat -T 2 "UNIX-CONNECT:$socket" \
+  EXEC:./conversation,fdin=3,fdout=4 2>/dev/null

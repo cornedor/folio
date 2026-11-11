@@ -1,0 +1,10 @@
+{
+  "folio": 1,
+  "requires": ["socat", "jq"],
+  "poll": { "command": ["./status"] },
+  "actions": [
+    { "id": "share", "label": "Nextcloud…", "menu": "share", "command": ["./share"],
+      "under": ["~/Nextcloud/"], "single": true }
+  ],
+  "details": { "command": ["./filestatus"], "under": ["~/Nextcloud/"] }
+}
