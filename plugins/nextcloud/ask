@@ -6,8 +6,7 @@
 # path asked about. A state is OK, SYNC, NEW, IGNORE, ERROR or NOP (not the
 # client's), with +SWM after it when shared. Fails when no client is running.
 
-# Without XDG_RUNTIME_DIR the client falls back as Qt does.
-socket="${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}/runtime-$USER}/Nextcloud/socket"
+. "${0%/*}/socket.sh"
 [ -S "$socket" ] || exit 1
 # From the plugin's folder, so its path needs no quoting for socat.
 cd "${0%/*}" || exit 1
