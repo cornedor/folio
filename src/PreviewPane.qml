@@ -296,8 +296,8 @@ Rectangle {
                 text: current ? current.name : qsTr("Choose")
                 contentItem: RowLayout {
                     spacing: 8
-                    Text { id: appName; Layout.fillWidth: true; text: opensWith.text; elide: Text.ElideMiddle; color: theme.foreground; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                    Text { id: arrow; text: "▾"; color: theme.foreground; verticalAlignment: Text.AlignVCenter }
+                    FolioText { id: appName; Layout.fillWidth: true; text: opensWith.text; elide: Text.ElideMiddle; color: theme.foreground; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                    FolioText { id: arrow; text: "▾"; color: theme.foreground; verticalAlignment: Text.AlignVCenter }
                 }
                 // A second click closes it again.
                 onClicked: appsMenu.visible ? appsMenu.close() : appsMenu.popup(opensWith, 0, opensWith.height + 4)
